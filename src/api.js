@@ -122,12 +122,14 @@ export const routes = {
   // 前端啟動時取得 LIFF ID（不含任何機密）
   'GET /api/config': async () => ({ liffId: process.env.LIFF_ID || '', dev: !!DEV_USER }),
 
-  // LIFF 直接從群組開啟（沒有 ?book= 參數）時，用 groupId 找回帳本
+  // 沒有可用的 ?book=（直接開 LIFF、或舊連結指向已不存在的帳本）時，用聊天室重新對應。
+  // 不在群組裡（1 對 1 聊天、外部瀏覽器）就退回這個人自己的帳本，
+  // 對應鍵由伺服器從已驗證的身分產生，不採信前端傳來的值。
   'POST /api/book/by-group': async (body) => {
-    await verifyIdToken(body.idToken);
-    const groupId = String(body.groupId || '');
-    if (!groupId) throw httpError(400, '缺少群組資訊');
-    const book = await store.getOrCreateBookByGroup(groupId);
+    const profile = await verifyIdToken(body.idToken);
+    const groupId = String(body.groupId || '').trim();
+    const key = groupId || `user:${profile.sub}`;
+    const book = await store.getOrCreateBookByGroup(key);
     return { bookId: book.id };
   },
 

@@ -39,22 +39,14 @@ async function sync(path, body) {
 
 async function boot() {
   const cfg = await fetch('/api/config').then((r) => r.json());
+  const liffMode = !!(cfg.liffId && window.liff);
+  let ctx = null;
 
-  if (cfg.liffId && window.liff) {
+  if (liffMode) {
     await liff.init({ liffId: cfg.liffId });
     if (!liff.isLoggedIn()) return liff.login({ redirectUri: location.href });
     idToken = liff.getIDToken();
-    if (!bookId) {
-      const ctx = liff.getContext();
-      if (ctx?.groupId || ctx?.roomId) {
-        const r = await fetch('/api/book/by-group', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ groupId: ctx.groupId || ctx.roomId, idToken }),
-        }).then((r) => r.json());
-        bookId = r.bookId;
-      }
-    }
+    ctx = liff.getContext();
   } else {
     // 開發模式：用名字當身分，開不同分頁就能模擬不同人
     idToken = localStorage.getItem('devUser');
@@ -62,18 +54,30 @@ async function boot() {
       idToken = prompt('開發模式：你是誰？（輸入名字）') || '測試員';
       localStorage.setItem('devUser', idToken);
     }
-    if (!bookId) {
-      bookId = (await fetch('/api/dev/book', { method: 'POST' }).then((r) => r.json())).bookId;
-      history.replaceState(null, '', `?book=${bookId}`);
+  }
+
+  // 網址上的帳本優先。但聊天記錄裡的舊按鈕可能指向已不存在的帳本，
+  // 所以載入失敗時不要直接報錯，改用目前的聊天室重新對應一本。
+  let loaded = false;
+  if (bookId) {
+    try {
+      S = await api('/api/state');
+      loaded = true;
+    } catch {
+      bookId = null;
     }
   }
 
-  if (!bookId) {
-    document.body.innerHTML = '<div class="empty">找不到帳本。請回群組點「開啟分帳」的按鈕。</div>';
-    return;
+  if (!loaded) {
+    const r = liffMode
+      ? await api('/api/book/by-group', { groupId: ctx?.groupId || ctx?.roomId || '' })
+      : await fetch('/api/dev/book', { method: 'POST' }).then((x) => x.json());
+    bookId = r.bookId;
+    history.replaceState(null, '', `?book=${bookId}`);
+    S = await api('/api/state');
   }
 
-  await sync('/api/state');
+  render();
 
   // 第一次進來 -> 請他確認名字（和選填帳號）
   if (!localStorage.getItem(`profiled:${bookId}`)) openProfileSheet(true);

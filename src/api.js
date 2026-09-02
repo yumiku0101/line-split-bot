@@ -41,13 +41,20 @@ function httpError(status, message) {
   return e;
 }
 
-/** 取得（必要時建立）目前使用者在這本帳裡的成員身分 */
-async function requireMember(body) {
+/** 解析帳本與身分。me 可能是 null（還沒加入這本帳），不會自動建立成員 */
+async function resolveMember(body) {
   const book = await store.getBook(body.bookId);
   if (!book) throw httpError(404, '找不到這本帳');
   const profile = await verifyIdToken(body.idToken);
-  const me = await store.upsertLineMember(book.id, profile.sub, profile.name);
-  return { book, me, profile };
+  const me = await store.findMemberByLineUser(book.id, profile.sub);
+  return { book, me: me ?? null, profile };
+}
+
+/** 需要已經是成員的操作用這個 */
+async function requireMember(body) {
+  const r = await resolveMember(body);
+  if (!r.me) throw httpError(403, '請先加入這本帳');
+  return r;
 }
 
 /* --------------------------------- 完整狀態 --------------------------------- */
@@ -123,13 +130,12 @@ export const routes = {
   'GET /api/config': async () => ({ liffId: process.env.LIFF_ID || '', dev: !!DEV_USER }),
 
   // 沒有可用的 ?book=（直接開 LIFF、或舊連結指向已不存在的帳本）時，用聊天室重新對應。
-  // 不在群組裡（1 對 1 聊天、外部瀏覽器）就退回這個人自己的帳本，
-  // 對應鍵由伺服器從已驗證的身分產生，不採信前端傳來的值。
+  // 不在群組裡就不建帳本 —— 以前會開一本只有自己的個人帳本，使用者會誤以為進到群組的帳。
   'POST /api/book/by-group': async (body) => {
-    const profile = await verifyIdToken(body.idToken);
+    await verifyIdToken(body.idToken);
     const groupId = String(body.groupId || '').trim();
-    const key = groupId || `user:${profile.sub}`;
-    const book = await store.getOrCreateBookByGroup(key);
+    if (!groupId) throw httpError(400, 'NO_GROUP');
+    const book = await store.getOrCreateBookByGroup(groupId);
     return { bookId: book.id };
   },
 
@@ -140,9 +146,30 @@ export const routes = {
     return { bookId: book.id };
   },
 
+  // meId 為 null 代表這個人還沒加入，前端會顯示「你是誰？」讓他認領或新增
   'POST /api/state': async (body) => {
-    const { book, me } = await requireMember(body);
-    return buildState(book, me.id);
+    const { book, me } = await resolveMember(body);
+    return buildState(book, me?.id ?? null);
+  },
+
+  // 加入這本帳：認領一個別人幫忙加、還沒綁 LINE 的名字，或以新成員身分加入
+  'POST /api/me/join': async (body) => {
+    const { book, me, profile } = await resolveMember(body);
+    if (me) return buildState(book, me.id); // 已經加入過，直接回狀態
+
+    if (body.claimMemberId !== undefined && body.claimMemberId !== null) {
+      const r = await store.claimMember(book.id, Number(body.claimMemberId), profile.sub);
+      if (!r.ok) throw httpError(409, r.reason);
+      return buildState(book, r.member.id);
+    }
+
+    const members = await store.listMembers(book.id);
+    if (members.length >= 50) throw httpError(400, '成員數量已達上限');
+    const name = String(body.name ?? '').trim().slice(0, 20) || profile.name || '新成員';
+    const created = await store.createLineMember(book.id, profile.sub, name);
+    const bank = String(body.bankAccount ?? '').trim().slice(0, 60);
+    if (bank) await store.updateMember(created.id, { name, bankAccount: bank });
+    return buildState(book, created.id);
   },
 
   // 更新自己的顯示名稱 / 銀行帳號

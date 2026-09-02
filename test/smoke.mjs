@@ -18,7 +18,7 @@ console.log('帳本：', bookId);
 
 const PEOPLE = ['阿明', '小美', '阿華', '小雅'];
 for (const name of PEOPLE) {
-  await post('/api/me', { bookId, idToken: name, name, bankAccount: `玉山 ${name}帳號` });
+  await post('/api/me/join', { bookId, idToken: name, name, bankAccount: `玉山 ${name}帳號` });
 }
 
 let S = await post('/api/state', { bookId, idToken: '阿明' });

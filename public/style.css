@@ -170,3 +170,10 @@ table.bk tr.sum td { border-top: 2px solid var(--line); font-weight: 700; }
   font-size: 13px; z-index: 90; pointer-events: none;
 }
 .toast[hidden] { display: none; }
+
+.tag {
+  display: inline-block; vertical-align: 2px;
+  font-size: 10.5px; font-weight: 600; color: var(--muted);
+  border: 1px solid var(--line); border-radius: 5px;
+  padding: 1px 5px; margin-left: 4px;
+}

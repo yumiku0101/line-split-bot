@@ -9,8 +9,13 @@ const money = (n) => Number(n || 0).toLocaleString('zh-TW');
 
 let bookId = new URLSearchParams(location.search).get('book');
 let idToken = null;
+let myLineName = ''; // LINE 暱稱，加入時當預設值
 let S = null; // 伺服器回來的完整狀態
 let tab = 'expenses';
+
+function fullScreen(html) {
+  document.body.innerHTML = `<div class="empty">${html}</div>`;
+}
 
 /* ------------------------------- 網路 ------------------------------- */
 
@@ -47,6 +52,11 @@ async function boot() {
     if (!liff.isLoggedIn()) return liff.login({ redirectUri: location.href });
     idToken = liff.getIDToken();
     ctx = liff.getContext();
+    try {
+      myLineName = (await liff.getProfile()).displayName || '';
+    } catch {
+      myLineName = '';
+    }
   } else {
     // 開發模式：用名字當身分，開不同分頁就能模擬不同人
     idToken = localStorage.getItem('devUser');
@@ -54,6 +64,7 @@ async function boot() {
       idToken = prompt('開發模式：你是誰？（輸入名字）') || '測試員';
       localStorage.setItem('devUser', idToken);
     }
+    myLineName = idToken;
   }
 
   // 網址上的帳本優先。但聊天記錄裡的舊按鈕可能指向已不存在的帳本，
@@ -69,8 +80,16 @@ async function boot() {
   }
 
   if (!loaded) {
+    const groupId = ctx?.groupId || ctx?.roomId || '';
+    // 群組外開啟就不建帳本了，直接告訴他怎麼進來
+    if (liffMode && !groupId) {
+      fullScreen(
+        '這個連結要從群組裡開啟。<br><br>請回你們的群組打一次<br><b>「分帳」</b><br><br>再點 Yumiku 發出的按鈕進來。',
+      );
+      return;
+    }
     const r = liffMode
-      ? await api('/api/book/by-group', { groupId: ctx?.groupId || ctx?.roomId || '' })
+      ? await api('/api/book/by-group', { groupId })
       : await fetch('/api/dev/book', { method: 'POST' }).then((x) => x.json());
     bookId = r.bookId;
     history.replaceState(null, '', `?book=${bookId}`);
@@ -79,8 +98,8 @@ async function boot() {
 
   render();
 
-  // 第一次進來 -> 請他確認名字（和選填帳號）
-  if (!localStorage.getItem(`profiled:${bookId}`)) openProfileSheet(true);
+  // 還不是成員 -> 讓他認領一個名字或以新成員加入
+  if (S.meId == null) openJoinSheet();
 }
 
 /* ------------------------------- 畫面 ------------------------------- */
@@ -177,8 +196,16 @@ function renderMembers() {
       return `<div class="card" data-member="${m.id}">
         <div class="row">
           <div class="grow">
-            <div class="title truncate">${esc(m.name)}${m.id === S.meId ? '（我）' : ''}</div>
-            <div class="sub truncate">${m.bankAccount ? esc(m.bankAccount) : '尚未填銀行帳號'}</div>
+            <div class="title truncate">${esc(m.name)}${m.id === S.meId ? '（我）' : ''}${
+              m.linked ? '' : ' <span class="tag">未認領</span>'
+            }</div>
+            <div class="sub truncate">${
+              m.linked
+                ? m.bankAccount
+                  ? esc(m.bankAccount)
+                  : '尚未填銀行帳號'
+                : '這個人還沒自己點進來'
+            }</div>
           </div>
           <div class="amt ${tagClass}" style="font-size:13.5px">${tag}</div>
         </div>
@@ -195,48 +222,104 @@ function renderMembers() {
     c.addEventListener('click', () => openMemberSheet(Number(c.dataset.member))),
   );
   $('#addMember').addEventListener('click', async () => {
-    const name = prompt('這個人的名字？');
+    const name = prompt('這個人的名字？（他之後自己點進來時可以認領這個名字）');
     if (name?.trim()) await sync('/api/members/add', { name: name.trim() });
   });
-  $('#editMe').addEventListener('click', () => openProfileSheet(false));
+  $('#editMe').addEventListener('click', () => openProfileSheet());
 }
 
 /* ------------------------------ 彈出視窗 ------------------------------ */
 
-function openSheet(html) {
+let sheetLocked = false; // 鎖住時不能關（加入畫面用）
+
+function openSheet(html, locked = false) {
+  sheetLocked = locked;
   $('#sheet').innerHTML = html;
   $('#sheetBg').hidden = false;
   $('#sheet').scrollTop = 0;
   $('#sheet').querySelector('.x')?.addEventListener('click', closeSheet);
 }
 function closeSheet() {
+  sheetLocked = false;
   $('#sheetBg').hidden = true;
   $('#sheet').innerHTML = '';
 }
 $('#sheetBg').addEventListener('click', (e) => {
-  if (e.target.id === 'sheetBg') closeSheet();
+  if (e.target.id === 'sheetBg' && !sheetLocked) closeSheet();
 });
 
 function head(title) {
   return `<div class="sheet-head"><h2>${esc(title)}</h2><button class="x">✕</button></div>`;
 }
 
+/* --- 加入這本帳（認領別人幫忙加的名字，或以新成員加入）--- */
+function openJoinSheet() {
+  const unclaimed = S.members.filter((m) => !m.linked);
+
+  openSheet(
+    `
+    <div class="sheet-head"><h2>你是誰？</h2></div>
+    <div class="sub" style="margin:-4px 0 4px">${esc(S.book.name)}・目前 ${S.members.length} 人</div>
+    ${
+      unclaimed.length
+        ? `<label class="f">下面是別人幫你加的名字，如果有你就點它<br>
+             <span style="font-weight:400">（記在那個名字上的帳會全部保留）</span></label>
+           <div class="chips" id="jClaim">
+             ${unclaimed.map((m) => `<button class="chip" data-c="${m.id}">我是 ${esc(m.name)}</button>`).join('')}
+           </div>
+           <div class="section-label" style="margin:20px 4px 8px">都不是？以新成員加入</div>`
+        : ''
+    }
+    <label class="f">顯示名稱</label>
+    <input type="text" id="jName" value="${esc(myLineName)}" maxlength="20" placeholder="大家看得懂的名字">
+    <label class="f">銀行帳號（選填，別人轉帳給你時會看到）</label>
+    <input type="text" id="jBank" maxlength="60" placeholder="例：822 玉山 1234-567-890123">
+    <button class="btn" id="jSave" style="margin-top:20px">加入這本帳</button>
+  `,
+    true, // 沒加入前不能關掉
+  );
+
+  const join = async (body) => {
+    try {
+      S = await api('/api/me/join', body);
+      render();
+      closeSheet();
+    } catch (e) {
+      toast(e.message);
+      if (/認領|已經在/.test(e.message)) {
+        S = await api('/api/state');
+        render();
+        if (S.meId == null) openJoinSheet();
+        else closeSheet();
+      }
+    }
+  };
+
+  $('#jClaim')?.querySelectorAll('[data-c]').forEach((b) =>
+    b.addEventListener('click', () => join({ claimMemberId: Number(b.dataset.c) })),
+  );
+  $('#jSave').addEventListener('click', () => {
+    const name = $('#jName').value.trim();
+    if (!name) return toast('名稱不能空白');
+    join({ name, bankAccount: $('#jBank').value.trim() });
+  });
+}
+
 /* --- 我的資料 --- */
-function openProfileSheet(first) {
+function openProfileSheet() {
   const me = S.members.find((m) => m.id === S.meId);
   openSheet(`
-    ${head(first ? '你是？' : '我的資料')}
+    ${head('我的資料')}
     <label class="f">顯示名稱</label>
     <input type="text" id="pName" value="${esc(me?.name || '')}" maxlength="20" placeholder="大家看得懂的名字">
     <label class="f">銀行帳號（選填，別人轉帳給你時會看到）</label>
     <input type="text" id="pBank" value="${esc(me?.bankAccount || '')}" maxlength="60" placeholder="例：822 玉山 1234-567-890123">
-    <button class="btn" id="pSave" style="margin-top:20px">${first ? '加入這本帳' : '儲存'}</button>
+    <button class="btn" id="pSave" style="margin-top:20px">儲存</button>
   `);
   $('#pSave').addEventListener('click', async () => {
     const name = $('#pName').value.trim();
     if (!name) return toast('名稱不能空白');
     await sync('/api/me', { name, bankAccount: $('#pBank').value.trim() });
-    localStorage.setItem(`profiled:${bookId}`, '1');
     closeSheet();
   });
 }

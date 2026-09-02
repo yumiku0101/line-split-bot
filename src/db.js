@@ -83,17 +83,38 @@ export function listMembers(bookId) {
   return all('SELECT * FROM members WHERE book_id = ? ORDER BY id', [bookId]);
 }
 
-/** LINE 使用者第一次點進 LIFF 就自動成為成員（名稱取自 LINE 暱稱） */
-export async function upsertLineMember(bookId, lineUserId, displayName) {
-  const found = await get('SELECT * FROM members WHERE book_id = ? AND line_user_id = ?', [
-    bookId, lineUserId,
-  ]);
-  if (found) return found;
+/** 這個 LINE 帳號在這本帳裡的成員身分（還沒加入就回 undefined） */
+export function findMemberByLineUser(bookId, lineUserId) {
+  return get('SELECT * FROM members WHERE book_id = ? AND line_user_id = ?', [bookId, lineUserId]);
+}
+
+/** 以新成員身分加入 */
+export async function createLineMember(bookId, lineUserId, displayName) {
   const info = await run(
     'INSERT INTO members (book_id, line_user_id, name, created_at) VALUES (?, ?, ?, ?)',
     [bookId, lineUserId, displayName || '新成員', now()],
   );
   return get('SELECT * FROM members WHERE id = ?', [info.lastInsertRowid]);
+}
+
+/**
+ * 認領一個別人幫忙新增、還沒綁 LINE 的名字。
+ * 綁定用條件式 UPDATE（WHERE line_user_id IS NULL），兩個人同時搶同一個名字時只有一個會成功。
+ */
+export async function claimMember(bookId, memberId, lineUserId) {
+  const target = await get('SELECT * FROM members WHERE id = ? AND book_id = ?', [memberId, bookId]);
+  if (!target) return { ok: false, reason: '找不到這位成員' };
+  if (target.line_user_id) return { ok: false, reason: '這個名字已經有人認領了' };
+
+  const mine = await findMemberByLineUser(bookId, lineUserId);
+  if (mine) return { ok: false, reason: '你已經在這本帳裡了' };
+
+  const info = await run(
+    'UPDATE members SET line_user_id = ? WHERE id = ? AND book_id = ? AND line_user_id IS NULL',
+    [lineUserId, memberId, bookId],
+  );
+  if (!info.changes) return { ok: false, reason: '這個名字剛剛被別人認領了' };
+  return { ok: true, member: await get('SELECT * FROM members WHERE id = ?', [memberId]) };
 }
 
 /** 手動新增一位還沒點進來的人 */

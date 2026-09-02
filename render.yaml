@@ -1,0 +1,29 @@
+# Render Blueprint：在 Render 選 "New > Blueprint" 指向這個 repo 就會照這份設定建立服務。
+# 標了 sync: false 的變數不會存在版控裡，Render 會在建立時要你手動輸入。
+services:
+  - type: web
+    name: line-split-bot
+    runtime: node
+    plan: free
+    region: singapore
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      # --- LINE Messaging API channel ---
+      - key: LINE_CHANNEL_SECRET
+        sync: false
+      - key: LINE_CHANNEL_ACCESS_TOKEN
+        sync: false
+      # --- LINE Login channel（LIFF）---
+      - key: LIFF_ID
+        sync: false
+      - key: LIFF_CHANNEL_ID
+        sync: false
+      # --- Turso（免費雲端 SQLite）---
+      - key: TURSO_DATABASE_URL
+        sync: false
+      - key: TURSO_AUTH_TOKEN
+        sync: false

@@ -1,0 +1,18 @@
+{
+  "name": "line-split-bot",
+  "version": "0.1.0",
+  "description": "LINE 旅遊分帳機器人：最少轉帳筆數結算",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=22.5"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "test": "node --test test/settle.test.js"
+  },
+  "dependencies": {
+    "@libsql/client": "^0.18.0"
+  }
+}

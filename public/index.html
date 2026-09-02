@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>旅遊分帳</title>
+<link rel="stylesheet" href="./style.css">
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+</head>
+<body>
+
+<header>
+  <h1 id="bookName">分帳</h1>
+  <div class="total" id="bookTotal"></div>
+</header>
+
+<main>
+  <!-- 明細 -->
+  <section class="panel on" id="p-expenses"></section>
+
+  <!-- 結算 -->
+  <section class="panel" id="p-settle"></section>
+
+  <!-- 成員 -->
+  <section class="panel" id="p-members"></section>
+</main>
+
+<button class="fab" id="fab">＋ 新增明細</button>
+
+<nav>
+  <button class="on" data-tab="expenses"><span>📝</span>明細</button>
+  <button data-tab="settle"><span>💸</span>結算</button>
+  <button data-tab="members"><span>👥</span>成員</button>
+</nav>
+
+<div class="sheet-bg" id="sheetBg" hidden>
+  <div class="sheet" id="sheet"></div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script type="module" src="./app.js"></script>
+</body>
+</html>

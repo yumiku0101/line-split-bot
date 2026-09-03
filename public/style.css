@@ -177,3 +177,6 @@ table.bk tr.sum td { border-top: 2px solid var(--line); font-weight: 700; }
   border: 1px solid var(--line); border-radius: 5px;
   padding: 1px 5px; margin-left: 4px;
 }
+
+.card.notice { border-color: var(--green); background: color-mix(in srgb, var(--green) 8%, var(--card)); }
+.card.notice .sub { color: var(--text); opacity: .7; }

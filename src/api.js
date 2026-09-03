@@ -35,6 +35,12 @@ export async function verifyIdToken(idToken) {
   return profile;
 }
 
+/** 有帶 bankAccount 才動它；沒帶就回 undefined，資料層會保留原值 */
+function pickBank(body) {
+  if (body.bankAccount === undefined || body.bankAccount === null) return undefined;
+  return String(body.bankAccount).trim().slice(0, 60);
+}
+
 function httpError(status, message) {
   const e = new Error(message);
   e.status = status;
@@ -177,10 +183,8 @@ export const routes = {
     const { book, me } = await requireMember(body);
     const name = String(body.name ?? me.name).trim().slice(0, 20);
     if (!name) throw httpError(400, '名稱不能空白');
-    await store.updateMember(me.id, {
-      name,
-      bankAccount: String(body.bankAccount ?? '').trim().slice(0, 60),
-    });
+    // 沒帶 bankAccount 就維持原值，不要把已經填好的帳號清掉
+    await store.updateMember(me.id, { name, bankAccount: pickBank(body) });
     return buildState(book, me.id);
   },
 
@@ -192,6 +196,22 @@ export const routes = {
     const members = await store.listMembers(book.id);
     if (members.length >= 50) throw httpError(400, '成員數量已達上限');
     await store.addPlainMember(book.id, name);
+    return buildState(book, me.id);
+  },
+
+  // 幫「還沒認領」的成員填名稱／銀行帳號。
+  // 已經綁了 LINE 的人只能自己改，別人動不了。
+  'POST /api/members/update': async (body) => {
+    const { book, me } = await requireMember(body);
+    const target = Number(body.memberId);
+    const members = await store.listMembers(book.id);
+    const m = members.find((x) => x.id === target);
+    if (!m) throw httpError(404, '找不到這位成員');
+    if (m.line_user_id && m.id !== me.id) throw httpError(403, '只能修改自己，或還沒認領的成員');
+
+    const name = String(body.name ?? m.name).trim().slice(0, 20);
+    if (!name) throw httpError(400, '名稱不能空白');
+    await store.updateMember(target, { name, bankAccount: pickBank(body) });
     return buildState(book, me.id);
   },
 

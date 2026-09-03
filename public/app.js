@@ -164,7 +164,10 @@ function renderSettle() {
           bank
             ? `<div class="bank"><code class="grow truncate">${esc(bank)}</code>
                  <button class="chip-btn" data-copy="${esc(bank)}">複製帳號</button></div>`
-            : `<div class="bank dim">${esc(nameOf(t.to))} 還沒填銀行帳號</div>`
+            : t.to === S.meId
+              ? `<div class="bank"><span class="grow">你還沒填銀行帳號，對方看不到要轉去哪</span>
+                   <button class="chip-btn" data-fillme="1">現在填</button></div>`
+              : `<div class="bank dim">${esc(nameOf(t.to))} 還沒填銀行帳號</div>`
         }
       </div>`;
     })
@@ -176,6 +179,9 @@ function renderSettle() {
 
   el.querySelectorAll('[data-copy]').forEach((b) =>
     b.addEventListener('click', () => copy(b.dataset.copy, '已複製帳號')),
+  );
+  el.querySelectorAll('[data-fillme]').forEach((b) =>
+    b.addEventListener('click', () => openProfileSheet()),
   );
   $('#copyAll').addEventListener('click', () => copy(settleText(), '已複製結算表'));
 }
@@ -213,10 +219,29 @@ function renderMembers() {
     })
     .join('');
 
+  const me = S.members.find((m) => m.id === S.meId);
+  const notice =
+    me && !me.bankAccount
+      ? `<div class="card notice" id="fillBank">
+           <div class="row">
+             <div class="grow">
+               <div class="title">你還沒填銀行帳號</div>
+               <div class="sub">別人要轉錢給你時看不到帳號</div>
+             </div>
+             <button class="chip-btn">現在填</button>
+           </div>
+         </div>`
+      : '';
+
   $('#p-members').innerHTML =
-    rows +
+    notice + rows +
     `<button class="btn ghost" id="addMember" style="margin-top:12px">＋ 新增一位還沒進來的人</button>
      <button class="btn ghost" id="editMe" style="margin-top:8px">修改我的名稱／銀行帳號</button>`;
+
+  $('#fillBank')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    openProfileSheet();
+  });
 
   $('#p-members').querySelectorAll('[data-member]').forEach((c) =>
     c.addEventListener('click', () => openMemberSheet(Number(c.dataset.member))),
@@ -302,6 +327,32 @@ function openJoinSheet() {
     const name = $('#jName').value.trim();
     if (!name) return toast('名稱不能空白');
     join({ name, bankAccount: $('#jBank').value.trim() });
+  });
+}
+
+/* --- 幫「還沒認領」的成員填名稱／帳號 --- */
+function openEditMemberSheet(memberId) {
+  const m = S.members.find((x) => x.id === memberId);
+  openSheet(`
+    ${head(m.name)}
+    <div class="sub" style="margin:-4px 0 4px">這個人還沒自己點進來，你可以先幫他填。
+      他之後認領這個名字時會沿用。</div>
+    <label class="f">顯示名稱</label>
+    <input type="text" id="eName" value="${esc(m.name)}" maxlength="20">
+    <label class="f">銀行帳號（選填）</label>
+    <input type="text" id="eBank" value="${esc(m.bankAccount || '')}" maxlength="60"
+           placeholder="例：822 玉山 1234-567-890123">
+    <button class="btn" id="eSave" style="margin-top:20px">儲存</button>
+  `);
+  $('#eSave').addEventListener('click', async () => {
+    const name = $('#eName').value.trim();
+    if (!name) return toast('名稱不能空白');
+    await sync('/api/members/update', {
+      memberId,
+      name,
+      bankAccount: $('#eBank').value.trim(),
+    });
+    closeSheet();
   });
 }
 
@@ -510,11 +561,24 @@ function openMemberSheet(memberId) {
     ${settleRows || '<div class="card dim">已經結清</div>'}
 
     ${
+      m.id === S.meId
+        ? '<button class="btn ghost" id="editM" style="margin-top:18px">修改我的名稱／銀行帳號</button>'
+        : !m.linked
+          ? '<button class="btn ghost" id="editM" style="margin-top:18px">幫他填名稱／銀行帳號</button>'
+          : ''
+    }
+    ${
       m.id !== S.meId && m.owed === 0 && m.paid === 0
-        ? '<button class="btn danger" id="delM" style="margin-top:18px">從這本帳移除</button>'
+        ? '<button class="btn danger" id="delM" style="margin-top:8px">從這本帳移除</button>'
         : ''
     }
   `);
+
+  $('#editM')?.addEventListener('click', () => {
+    closeSheet();
+    if (m.id === S.meId) openProfileSheet();
+    else openEditMemberSheet(m.id);
+  });
 
   $('#sheet').querySelectorAll('[data-copy]').forEach((b) =>
     b.addEventListener('click', () => copy(b.dataset.copy, '已複製')),

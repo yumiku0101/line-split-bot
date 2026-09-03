@@ -91,18 +91,28 @@ export async function handleEvents(events) {
   }
 }
 
+const ONE_ON_ONE_HINT =
+  '分帳要在群組裡使用喔。\n\n' +
+  '請把我加進你們的群組，然後在群組裡打「分帳」，\n' +
+  '我會發一顆按鈕給大家點進去記帳。';
+
 async function handleEvent(ev) {
-  const groupKey =
-    ev.source?.groupId || ev.source?.roomId || (ev.source?.userId ? `user:${ev.source.userId}` : null);
-  if (!groupKey) return;
+  const groupKey = ev.source?.groupId || ev.source?.roomId || null;
+
+  // 一對一聊天（加好友、私訊）不開帳本 —— 以前會為每個人開一本用不到的個人帳本
+  if (!groupKey) {
+    const isTalking = ev.type === 'follow' || (ev.type === 'message' && ev.message?.type === 'text');
+    if (ev.replyToken && isTalking) {
+      await reply(ev.replyToken, [{ type: 'text', text: ONE_ON_ONE_HINT }]);
+    }
+    return;
+  }
 
   // 被加進群組 -> 開一本新帳，並送出入口
-  if (ev.type === 'join' || ev.type === 'follow') {
+  if (ev.type === 'join') {
     const book = await store.getOrCreateBookByGroup(groupKey);
     if (ev.replyToken) {
-      await reply(ev.replyToken, [
-        openButton(book, '大家點進來輸入名字就可以開始記帳了'),
-      ]);
+      await reply(ev.replyToken, [openButton(book, '大家點進來輸入名字就可以開始記帳了')]);
     }
     return;
   }

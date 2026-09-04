@@ -19,12 +19,19 @@
   }
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-html, body { margin: 0; height: 100%; }
+/* body 不能鎖成 height:100% —— LINE 的 webview 會把它當成「內容不超過一頁」，
+   捲動就會被橡皮筋彈回去。用 min-height 讓它跟著內容長。 */
+html { min-height: 100%; }
 body {
+  margin: 0;
+  min-height: 100vh;
+  min-height: 100dvh;
   background: var(--bg);
   color: var(--text);
   font: 15px/1.5 -apple-system, "Segoe UI", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
-  padding-bottom: 76px;
+  padding-bottom: calc(80px + env(safe-area-inset-bottom));
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
 }
 button, input, select { font: inherit; color: inherit; }
 button { cursor: pointer; border: none; background: none; }
@@ -108,7 +115,8 @@ nav button span { display: block; font-size: 18px; line-height: 1.2; }
 .sheet-bg[hidden] { display: none; }
 .sheet {
   background: var(--bg); width: 100%; max-width: 640px;
-  border-radius: 18px 18px 0 0; max-height: 92vh; overflow-y: auto;
+  border-radius: 18px 18px 0 0; max-height: 92vh; max-height: 92dvh;
+  overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
   padding: 8px 16px calc(24px + env(safe-area-inset-bottom));
   animation: up .18s ease-out;
 }
@@ -180,3 +188,6 @@ table.bk tr.sum td { border-top: 2px solid var(--line); font-weight: 700; }
 
 .card.notice { border-color: var(--green); background: color-mix(in srgb, var(--green) 8%, var(--card)); }
 .card.notice .sub { color: var(--text); opacity: .7; }
+
+/* 彈出視窗開著時鎖住背景，避免捲動串到底層 */
+body.sheet-open { overflow: hidden; }

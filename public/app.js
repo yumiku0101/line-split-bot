@@ -105,12 +105,15 @@ async function boot() {
 /* ------------------------------- 畫面 ------------------------------- */
 
 function render() {
+  // 重畫會換掉整個列表，先記住捲動位置，畫完再放回去
+  const y = window.scrollY;
   $('#bookName').textContent = S.book.name;
   $('#bookTotal').textContent = `${S.expenses.length} 筆・共 ${money(S.total)}`;
   $('#fab').hidden = tab !== 'expenses';
   for (const p of document.querySelectorAll('.panel')) p.classList.remove('on');
   $(`#p-${tab}`).classList.add('on');
   ({ expenses: renderExpenses, settle: renderSettle, members: renderMembers })[tab]();
+  if (window.scrollY !== y) window.scrollTo(0, y);
 }
 
 const nameOf = (id) => S.members.find((m) => m.id === id)?.name ?? '?';
@@ -256,11 +259,14 @@ function renderMembers() {
 /* ------------------------------ 彈出視窗 ------------------------------ */
 
 let sheetLocked = false; // 鎖住時不能關（加入畫面用）
+let scrollBeforeSheet = 0;
 
 function openSheet(html, locked = false) {
   sheetLocked = locked;
+  if ($('#sheetBg').hidden) scrollBeforeSheet = window.scrollY;
   $('#sheet').innerHTML = html;
   $('#sheetBg').hidden = false;
+  document.body.classList.add('sheet-open');
   $('#sheet').scrollTop = 0;
   $('#sheet').querySelector('.x')?.addEventListener('click', closeSheet);
 }
@@ -268,6 +274,8 @@ function closeSheet() {
   sheetLocked = false;
   $('#sheetBg').hidden = true;
   $('#sheet').innerHTML = '';
+  document.body.classList.remove('sheet-open');
+  window.scrollTo(0, scrollBeforeSheet);
 }
 $('#sheetBg').addEventListener('click', (e) => {
   if (e.target.id === 'sheetBg' && !sheetLocked) closeSheet();
@@ -622,6 +630,7 @@ document.querySelectorAll('nav button').forEach((b) =>
     tab = b.dataset.tab;
     document.querySelectorAll('nav button').forEach((x) => x.classList.toggle('on', x === b));
     render();
+    window.scrollTo(0, 0); // 換分頁才回到最上面
   }),
 );
 $('#fab').addEventListener('click', () => openExpenseSheet(null));
